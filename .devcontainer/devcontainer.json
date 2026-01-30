@@ -1,0 +1,33 @@
+{
+  "name": "Node.js & TypeScript + Go + Postgres (sidecar)",
+  "dockerComposeFile": ["docker-compose.yaml"],
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "service": "app",
+  "remoteUser": "root",
+  "features": {
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "1.22",
+      "installTools": true
+    }
+  },
+  "forwardPorts": [5432],
+  "postStartCommand": "go install github.com/bootdotdev/bootdev@latest",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "ms-vscode.vscode-typescript-next",
+        "esbenp.prettier-vscode",
+        "yoavbls.pretty-ts-errors"
+      ],
+      "settings": {
+        "go.useLanguageServer": true
+      }
+    }
+  },
+  "containerEnv": {
+    "DATABASE_URL": "postgres://postgres:postgres@db:5432/gator"
+  },
+
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y postgresql-client && go version && node -v && npm -v"
+}
