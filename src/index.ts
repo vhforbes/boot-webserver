@@ -4,6 +4,30 @@ import { config } from "./config.js";
 const app = express();
 const PORT = 8080;
 
+class BadRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+class UnauthorizedError extends Error {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+class ForbiddenError extends Error {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+class NotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
 function handlerReadiness(req: Request, res: Response) {
   res.set({
     "Content-Type": "text/plain; charset=utf-8",
@@ -71,8 +95,7 @@ function middlewareRegisterServerHit(
 
 function handleChirp(req: Request, res: Response) {
   if (req.body.cleanedBody.length > 120) {
-    res.status(400).send({ error: "Chirp is too long" });
-    return;
+    throw new BadRequestError("Chirp is too long. Max length is 140");
   }
 
   res.status(200).send(req.body);
@@ -118,6 +141,39 @@ function middlewareCleanChirp(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+function handleError(
+  err: Error,
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  console.log("error: ", err);
+
+  if (err instanceof BadRequestError) {
+    res.status(400).json({
+      error: err.message,
+    });
+  } else if (err instanceof UnauthorizedError) {
+    res.status(401).json({
+      error: err.message,
+    });
+  } else if (err instanceof NotFoundError) {
+    res.status(404).json({
+      error: err.message,
+    });
+  } else if (err instanceof ForbiddenError) {
+    res.status(403).json({
+      error: err.message,
+    });
+  } else {
+    res.status(500).json({
+      error: "Something went wrong on our end",
+    });
+  }
+
+  res;
+}
+
 app.use(middlewareLogResponses);
 app.use(express.json());
 
@@ -125,10 +181,22 @@ app.get("/api/healthz", handlerReadiness);
 app.post("/admin/reset", resetMetrics);
 app.get("/admin/metrics", handleMetrics);
 
-app.post("/api/validate_chirp", middlewareCleanChirp, handleChirp);
+app.post(
+  "/api/validate_chirp",
+  middlewareCleanChirp,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      handleChirp(req, res);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 // Order matters here, middleware comes before
 app.use("/app", middlewareRegisterServerHit, express.static("."));
+
+app.use(handleError);
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log("Server running on http://localhost:8080");
