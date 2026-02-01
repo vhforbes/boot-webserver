@@ -23,14 +23,14 @@ function handleMetrics(req: Request, res: Response) {
     <html>
       <body>
         <h1>Welcome, Chirpy Admin</h1>
-        <p>Chirpy has been visited ${config.fileserverHits} times!</p>
+        <p>Chirpy has been visited ${config.fileServerHits} times!</p>
       </body>
     </html>
   `);
 }
 
 function resetMetrics(req: Request, res: Response) {
-  config.fileserverHits = 0;
+  config.fileServerHits = 0;
 
   res.set({
     "Content-Type": "text/plain; charset=utf-8",
@@ -63,47 +63,69 @@ function middlewareRegisterServerHit(
   res.on("finish", () => {
     console.log(req.originalUrl);
 
-    if (req.originalUrl.includes("/app")) config.fileserverHits += 1;
+    if (req.originalUrl.includes("/app")) config.fileServerHits += 1;
   });
 
   next();
 }
 
 function handleChirp(req: Request, res: Response) {
-  let body = "";
+  if (req.body.cleanedBody.length > 120) {
+    res.status(400).send({ error: "Chirp is too long" });
+    return;
+  }
 
-  req.on("data", (chunk) => {
-    body += chunk;
-  });
+  res.status(200).send(req.body);
+  return;
+}
 
-  req.on("end", () => {
-    try {
-      const parsedBody = JSON.parse(body);
+function middlewareCleanChirp(req: Request, res: Response, next: NextFunction) {
+  let chirp: string = req.body.body;
 
-      console.log(parsedBody);
+  // split phrase into words
+  // check each word and replace on string position
+  // put i togheter again
+  const replaceForbiddenWord = (originalWord: string) => {
+    const word = originalWord.toLocaleLowerCase();
 
-      if (parsedBody.body.length > 120) {
-        res.status(400).send({ error: "Chirp is too long" });
-        return;
-      }
-
-      res.status(200).send({ valid: true });
-      return;
-    } catch (error) {
-      res.status(400).send({
-        error: "Something went wrong",
-      });
+    if (word.includes("kerfuffle")) {
+      return "****";
     }
+
+    if (word.includes("sharbert")) {
+      return "****";
+    }
+
+    if (word.includes("fornax")) {
+      return "****";
+    }
+
+    return originalWord;
+  };
+
+  const chirpArray = chirp.split(" ");
+
+  chirpArray.forEach((word, i) => {
+    chirpArray[i] = replaceForbiddenWord(word);
   });
+
+  const cleanedChirp = chirpArray.join(" ");
+
+  console.log("clean chirp", cleanedChirp);
+
+  req.body = { cleanedBody: cleanedChirp };
+
+  next();
 }
 
 app.use(middlewareLogResponses);
+app.use(express.json());
 
 app.get("/api/healthz", handlerReadiness);
 app.post("/admin/reset", resetMetrics);
 app.get("/admin/metrics", handleMetrics);
 
-app.post("/api/validate_chirp", handleChirp);
+app.post("/api/validate_chirp", middlewareCleanChirp, handleChirp);
 
 // Order matters here, middleware comes before
 app.use("/app", middlewareRegisterServerHit, express.static("."));
