@@ -6,16 +6,21 @@
   "scripts": {
     "build": "npx tsc",
     "start": "node dist/index.js",
-    "dev": "npx tsc && node dist/index.js"
+    "dev": "npx tsc && node dist/index.js",
+    "generate": "drizzle-kit generate",
+    "migrate": "drizzle-kit migrate"
   },
   "keywords": [],
   "author": "",
   "devDependencies": {
     "@types/express": "^5.0.1",
     "@types/node": "^22.10.5",
+    "drizzle-kit": "^0.31.8",
     "typescript": "^5.7.2"
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "drizzle-orm": "^0.45.1",
+    "express": "^5.1.0",
+    "postgres": "^3.4.8"
   }
 }

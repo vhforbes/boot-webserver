@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1770251232670,
+      "tag": "0000_yielding_doctor_faustus",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1770291927554,
+      "tag": "0001_clean_loa",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1770292318988,
+      "tag": "0002_gifted_william_stryker",
+      "breakpoints": true
+    }
+  ]
+}

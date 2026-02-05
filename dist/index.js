@@ -1,5 +1,12 @@
 import express from "express";
 import { config } from "./config.js";
+import postgres from "postgres";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { createUser, resetUsers } from "./db/queries/users.js";
+import { createChirp } from "./db/queries/chirps.js";
+const migrationClient = postgres(config.dbConfig.dbUrl, { max: 1 });
+await migrate(drizzle(migrationClient), config.dbConfig.migrationConfig);
 const app = express();
 const PORT = 8080;
 class BadRequestError extends Error {
@@ -42,8 +49,11 @@ function handleMetrics(req, res) {
     </html>
   `);
 }
-function resetMetrics(req, res) {
+async function resetMetrics(req, res) {
+    if (config.plataform !== "DEV")
+        throw new ForbiddenError("Only allowed in dev");
     config.fileServerHits = 0;
+    await resetUsers();
     res.set({
         "Content-Type": "text/plain; charset=utf-8",
     });
@@ -96,7 +106,7 @@ function middlewareCleanChirp(req, res, next) {
     });
     const cleanedChirp = chirpArray.join(" ");
     console.log("clean chirp", cleanedChirp);
-    req.body = { cleanedBody: cleanedChirp };
+    req.body = { ...req.body, body: cleanedChirp };
     next();
 }
 function handleError(err, req, res, next) {
@@ -128,19 +138,38 @@ function handleError(err, req, res, next) {
     }
     res;
 }
+async function handleCreateUser(req, res) {
+    if (!req.body.email)
+        throw new BadRequestError("Email is required");
+    const user = await createUser({ email: req.body.email });
+    res.status(201).send(user);
+}
+async function handleCreateChirp(req, res) {
+    const { body, userId } = req.body;
+    if (!body || !userId)
+        throw new BadRequestError("Missing params for chirping");
+    const chirp = await createChirp(userId, body);
+    console.log(chirp);
+    res.status(201).send(chirp);
+}
 app.use(middlewareLogResponses);
 app.use(express.json());
 app.get("/api/healthz", handlerReadiness);
 app.post("/admin/reset", resetMetrics);
 app.get("/admin/metrics", handleMetrics);
-app.post("/api/validate_chirp", middlewareCleanChirp, async (req, res, next) => {
-    try {
-        handleChirp(req, res);
-    }
-    catch (error) {
-        next(error);
-    }
-});
+// app.post(
+//   "/api/validate_chirp",
+//   middlewareCleanChirp,
+//   async (req: Request, res: Response, next: NextFunction) => {
+//     try {
+//       handleChirp(req, res);
+//     } catch (error) {
+//       next(error);
+//     }
+//   },
+// );
+app.post("/api/users", handleCreateUser);
+app.post("/api/chirps", middlewareCleanChirp, handleCreateChirp);
 // Order matters here, middleware comes before
 app.use("/app", middlewareRegisterServerHit, express.static("."));
 app.use(handleError);

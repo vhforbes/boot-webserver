@@ -26,7 +26,7 @@
     }
   },
   "containerEnv": {
-    "DATABASE_URL": "postgres://postgres:postgres@db:5432/gator"
+    "DATABASE_URL": "postgres://postgres:postgres@db:5432/chirpy"
   },
 
   "postCreateCommand": "sudo apt-get update && sudo apt-get install -y postgresql-client && go version && node -v && npm -v"
