@@ -4,7 +4,7 @@ import postgres from "postgres";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { createUser, resetUsers } from "./db/queries/users.js";
-import { createChirp } from "./db/queries/chirps.js";
+import { createChirp, getChirps, getChirpsById } from "./db/queries/chirps.js";
 const migrationClient = postgres(config.dbConfig.dbUrl, { max: 1 });
 await migrate(drizzle(migrationClient), config.dbConfig.migrationConfig);
 const app = express();
@@ -152,6 +152,19 @@ async function handleCreateChirp(req, res) {
     console.log(chirp);
     res.status(201).send(chirp);
 }
+async function handleGetChirps(req, res) {
+    const chirps = await getChirps();
+    res.status(200).send(chirps);
+}
+async function handleGetChirpsById(req, res) {
+    const { id } = req.params;
+    if (!id || Array.isArray(id))
+        throw new BadRequestError("Invalid Id received");
+    const chirps = await getChirpsById(id);
+    if (!chirps)
+        throw new NotFoundError("Chirp not found");
+    res.status(200).send(chirps);
+}
 app.use(middlewareLogResponses);
 app.use(express.json());
 app.get("/api/healthz", handlerReadiness);
@@ -169,6 +182,8 @@ app.get("/admin/metrics", handleMetrics);
 //   },
 // );
 app.post("/api/users", handleCreateUser);
+app.get("/api/chirps", handleGetChirps);
+app.get("/api/chirps/:id", handleGetChirpsById);
 app.post("/api/chirps", middlewareCleanChirp, handleCreateChirp);
 // Order matters here, middleware comes before
 app.use("/app", middlewareRegisterServerHit, express.static("."));
