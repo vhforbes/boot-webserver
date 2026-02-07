@@ -18,6 +18,7 @@ type DBConfig = {
 type APIConfig = {
   fileServerHits: number;
   plataform: string;
+  secret: string;
   dbConfig: DBConfig;
 };
 
@@ -32,6 +33,7 @@ const dbConfig: DBConfig = {
 
 export const config: APIConfig = {
   fileServerHits: 0,
-  dbConfig,
+  secret: envOrThrow("SECRET"),
   plataform: envOrThrow("PLATAFORM"),
+  dbConfig,
 };

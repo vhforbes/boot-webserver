@@ -3,8 +3,9 @@ import { config } from "./config.js";
 import postgres from "postgres";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { createUser, resetUsers } from "./db/queries/users.js";
+import { createUser, getUserByEmail, resetUsers } from "./db/queries/users.js";
 import { createChirp, getChirps, getChirpsById } from "./db/queries/chirps.js";
+import { checkPassword, getBearerToken, hashPassword, makeJWT, validateJWT, } from "./auth.js";
 const migrationClient = postgres(config.dbConfig.dbUrl, { max: 1 });
 await migrate(drizzle(migrationClient), config.dbConfig.migrationConfig);
 const app = express();
@@ -141,8 +142,43 @@ function handleError(err, req, res, next) {
 async function handleCreateUser(req, res) {
     if (!req.body.email)
         throw new BadRequestError("Email is required");
-    const user = await createUser({ email: req.body.email });
-    res.status(201).send(user);
+    if (!req.body.password)
+        throw new BadRequestError("Password is required");
+    const newHashedPassword = await hashPassword(req.body.password);
+    const user = await createUser({
+        email: req.body.email,
+        hashedPassword: newHashedPassword,
+    });
+    const { hashedPassword, ...safeUser } = user;
+    res.status(201).send(safeUser);
+}
+export async function login(req, res) {
+    if (!req.body.email)
+        throw new BadRequestError("Email is required");
+    if (!req.body.password)
+        throw new BadRequestError("Password is required");
+    let expiresInSeconds = 60 * 60 * 1000; // 1h
+    if (req.body.expiresInSeconds &&
+        parseInt(req.body.expiresInSeconds) < expiresInSeconds // Do not allow > 1h expires
+    ) {
+        expiresInSeconds = parseInt(req.body.expiresInSeconds);
+    }
+    const user = await getUserByEmail(req.body.email);
+    if (!user)
+        throw new BadRequestError("User not found");
+    const isValidPassword = await checkPassword(req.body.password, user.hashedPassword);
+    if (!isValidPassword)
+        throw new UnauthorizedError("Invalid credentials");
+    const { hashedPassword, ...safeUser } = user;
+    const jwt = makeJWT(safeUser.id, expiresInSeconds, config.secret);
+    res.status(200).send({ ...safeUser, token: jwt });
+}
+function handleIsLoggedIn(req, res, next) {
+    const token = getBearerToken(req);
+    const isValid = validateJWT(token, config.secret);
+    if (!isValid)
+        throw new UnauthorizedError("Not valid token");
+    next();
 }
 async function handleCreateChirp(req, res) {
     const { body, userId } = req.body;
@@ -182,9 +218,10 @@ app.get("/admin/metrics", handleMetrics);
 //   },
 // );
 app.post("/api/users", handleCreateUser);
+app.post("/api/login", login);
 app.get("/api/chirps", handleGetChirps);
 app.get("/api/chirps/:id", handleGetChirpsById);
-app.post("/api/chirps", middlewareCleanChirp, handleCreateChirp);
+app.post("/api/chirps", handleIsLoggedIn, middlewareCleanChirp, handleCreateChirp);
 // Order matters here, middleware comes before
 app.use("/app", middlewareRegisterServerHit, express.static("."));
 app.use(handleError);

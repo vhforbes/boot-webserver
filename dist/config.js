@@ -14,6 +14,7 @@ const dbConfig = {
 };
 export const config = {
     fileServerHits: 0,
-    dbConfig,
+    secret: envOrThrow("SECRET"),
     plataform: envOrThrow("PLATAFORM"),
+    dbConfig,
 };
