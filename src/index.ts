@@ -3,17 +3,34 @@ import { config } from "./config.js";
 import postgres from "postgres";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { db } from "./db/index.js";
-import { createUser, getUserByEmail, resetUsers } from "./db/queries/users.js";
-import { createChirp, getChirps, getChirpsById } from "./db/queries/chirps.js";
+import {
+  createUser,
+  getUserByEmail,
+  resetUsers,
+  updateUser,
+  updateUserToRed,
+} from "./db/queries/users.js";
+import {
+  createChirp,
+  deleteChirpById,
+  getChirps,
+  getChirpsById,
+} from "./db/queries/chirps.js";
 import {
   checkPassword,
+  getApiKey,
   getBearerToken,
   hashPassword,
   makeJWT,
+  makeRefreshToken,
   validateJWT,
 } from "./auth.js";
+import {
+  getRefreshToken,
+  revokeRefreshToken,
+} from "./db/queries/refreshTokens.js";
 
+// Check if everything is in sync with db
 const migrationClient = postgres(config.dbConfig.dbUrl, { max: 1 });
 await migrate(drizzle(migrationClient), config.dbConfig.migrationConfig);
 
@@ -155,9 +172,9 @@ function middlewareCleanChirp(req: Request, res: Response, next: NextFunction) {
 
   const cleanedChirp = chirpArray.join(" ");
 
-  console.log("clean chirp", cleanedChirp);
-
   req.body = { ...req.body, body: cleanedChirp };
+
+  console.log(req.body);
 
   next();
 }
@@ -211,52 +228,35 @@ async function handleCreateUser(req: Request, res: Response) {
   res.status(201).send(safeUser);
 }
 
-export async function login(req: Request, res: Response) {
+async function handleUpdateUser(req: Request, res: Response) {
   if (!req.body.email) throw new BadRequestError("Email is required");
   if (!req.body.password) throw new BadRequestError("Password is required");
 
-  let expiresInSeconds = 60 * 60 * 1000; // 1h
+  let userIdFromJwt: string;
 
-  if (
-    req.body.expiresInSeconds &&
-    parseInt(req.body.expiresInSeconds) < expiresInSeconds // Do not allow > 1h expires
-  ) {
-    expiresInSeconds = parseInt(req.body.expiresInSeconds);
+  try {
+    userIdFromJwt = validateJWT(getBearerToken(req), config.secret);
+  } catch {
+    throw new UnauthorizedError("Jwt not valid");
   }
 
-  const user = await getUserByEmail(req.body.email);
+  const newPassword = await hashPassword(req.body.password);
 
-  if (!user) throw new BadRequestError("User not found");
-
-  const isValidPassword = await checkPassword(
-    req.body.password,
-    user.hashedPassword,
+  const updatedUser = await updateUser(
+    userIdFromJwt,
+    req.body.email,
+    newPassword,
   );
 
-  if (!isValidPassword) throw new UnauthorizedError("Invalid credentials");
+  const { hashedPassword, ...safeUser } = updatedUser;
 
-  const { hashedPassword, ...safeUser } = user;
-
-  const jwt = makeJWT(safeUser.id, expiresInSeconds, config.secret);
-
-  res.status(200).send({ ...safeUser, token: jwt });
-}
-
-function handleIsLoggedIn(req: Request, res: Response, next: NextFunction) {
-  const token = getBearerToken(req);
-
-  const isValid = validateJWT(token, config.secret);
-
-  if (!isValid) throw new UnauthorizedError("Not valid token");
-
-  next();
+  res.status(200).send(safeUser);
 }
 
 async function handleCreateChirp(req: Request, res: Response) {
   const { body, userId } = req.body;
 
-  if (!body || !userId)
-    throw new BadRequestError("Missing params for chirping");
+  if (!body) throw new BadRequestError("Missing params for chirping");
 
   const chirp = await createChirp(userId, body);
 
@@ -284,30 +284,147 @@ async function handleGetChirpsById(req: Request, res: Response) {
   res.status(200).send(chirps);
 }
 
+async function handleDeleteChirp(req: Request, res: Response) {
+  let userIdFromJwt: string;
+
+  try {
+    userIdFromJwt = validateJWT(getBearerToken(req), config.secret);
+  } catch {
+    throw new UnauthorizedError("Jwt not valid");
+  }
+
+  const { id } = req.params;
+
+  if (!id || Array.isArray(id))
+    throw new BadRequestError("Invalid Id received");
+
+  const chirpToDelete = await getChirpsById(id);
+
+  if (!chirpToDelete) throw new NotFoundError("Chirp not found");
+
+  if (chirpToDelete.userId !== userIdFromJwt)
+    throw new ForbiddenError("You cant delete this chirp");
+
+  await deleteChirpById(chirpToDelete.id);
+
+  res.status(204).send();
+}
+
+export async function login(req: Request, res: Response) {
+  if (!req.body.email) throw new BadRequestError("Email is required");
+  if (!req.body.password) throw new BadRequestError("Password is required");
+
+  let expiresInSeconds = 60 * 60 * 1000; // 1h
+
+  const user = await getUserByEmail(req.body.email);
+
+  if (!user) throw new BadRequestError("User not found");
+
+  const isValidPassword = await checkPassword(
+    req.body.password,
+    user.hashedPassword,
+  );
+
+  if (!isValidPassword) throw new UnauthorizedError("Invalid credentials");
+
+  const refreshToken = await makeRefreshToken(user.id);
+
+  const { hashedPassword, ...safeUser } = user;
+
+  const jwt = makeJWT(safeUser.id, expiresInSeconds, config.secret);
+
+  res.status(200).send({ ...safeUser, token: jwt, refreshToken });
+}
+
+async function refreshToken(req: Request, res: Response) {
+  const token = await getRefreshToken(getBearerToken(req));
+
+  if (!token) throw new UnauthorizedError("refresh token not found");
+
+  const now = new Date(Date.now());
+
+  if (token.revokedAt && token.revokedAt <= now)
+    throw new UnauthorizedError("refresh token revoked");
+
+  if (token.expiresAt && token.expiresAt <= now)
+    throw new UnauthorizedError("refresh token expired");
+
+  let expiresInSeconds = 60 * 60 * 1000;
+
+  const jwt = makeJWT(token.userId, expiresInSeconds, config.secret);
+
+  res.status(200).send({
+    token: jwt,
+  });
+}
+
+async function revokeToken(req: Request, res: Response) {
+  const token = await getRefreshToken(getBearerToken(req));
+
+  if (!token) throw new UnauthorizedError("refresh token not found");
+
+  await revokeRefreshToken(token.token);
+
+  res.status(204).send();
+}
+
+function handleIsLoggedIn(req: Request, res: Response, next: NextFunction) {
+  const token = getBearerToken(req);
+
+  const userId = validateJWT(token, config.secret);
+
+  if (!userId) throw new UnauthorizedError("Not valid token");
+
+  req.body.userId = userId;
+
+  next();
+}
+
+async function setUserRed(req: Request, res: Response) {
+  if (!req.body.event) throw new BadRequestError("Event is required");
+  if (!req.body.data.userId) throw new BadRequestError("userId is required");
+
+  if (req.body.event !== "user.upgraded") {
+    res.status(204).send();
+    return;
+  }
+
+  const updatedUser = await updateUserToRed(req.body.data.userId);
+
+  if (!updatedUser) throw new NotFoundError("User not found");
+
+  res.status(204).send();
+}
+
+function validatePolkaApi(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (config.polkaApiKey !== getApiKey(req))
+      return next(new UnauthorizedError("Not valid polka api key"));
+
+    next();
+  } catch (error) {
+    return next(new UnauthorizedError("Not valid polka api key"));
+  }
+}
+
 app.use(middlewareLogResponses);
 app.use(express.json());
 
 app.get("/api/healthz", handlerReadiness);
-app.post("/admin/reset", resetMetrics);
-app.get("/admin/metrics", handleMetrics);
 
-// app.post(
-//   "/api/validate_chirp",
-//   middlewareCleanChirp,
-//   async (req: Request, res: Response, next: NextFunction) => {
-//     try {
-//       handleChirp(req, res);
-//     } catch (error) {
-//       next(error);
-//     }
-//   },
-// );
+app.get("/admin/metrics", handleMetrics);
+app.post("/admin/reset", resetMetrics);
 
 app.post("/api/users", handleCreateUser);
+app.put("/api/users", handleUpdateUser);
+
 app.post("/api/login", login);
+app.post("/api/refresh", refreshToken);
+app.post("/api/revoke", revokeToken);
 
 app.get("/api/chirps", handleGetChirps);
 app.get("/api/chirps/:id", handleGetChirpsById);
+app.delete("/api/chirps/:id", handleDeleteChirp);
 
 app.post(
   "/api/chirps",
@@ -315,6 +432,8 @@ app.post(
   middlewareCleanChirp,
   handleCreateChirp,
 );
+
+app.post("/api/polka/webhooks", validatePolkaApi, setUserRed);
 
 // Order matters here, middleware comes before
 app.use("/app", middlewareRegisterServerHit, express.static("."));

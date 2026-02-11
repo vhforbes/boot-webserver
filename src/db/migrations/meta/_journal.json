@@ -29,6 +29,27 @@
       "when": 1770489911940,
       "tag": "0003_dazzling_terror",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1770666187443,
+      "tag": "0004_heavy_maggott",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1770751318918,
+      "tag": "0005_brave_gamma_corps",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1770751333727,
+      "tag": "0006_mean_professor_monster",
+      "breakpoints": true
     }
   ]
 }

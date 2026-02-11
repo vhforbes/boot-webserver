@@ -16,7 +16,40 @@ export async function resetUsers() {
 }
 
 export async function getUserByEmail(email: string) {
+  console.log(email);
+
   const [user] = await db.select().from(users).where(eq(users.email, email));
+
+  console.log(user);
+
+  return user;
+}
+
+export async function updateUser(
+  userId: string,
+  email: string,
+  hashedPassword: string,
+) {
+  const [user] = await db
+    .update(users)
+    .set({
+      email,
+      hashedPassword,
+    })
+    .where(eq(users.id, userId))
+    .returning();
+
+  return user;
+}
+
+export async function updateUserToRed(userId: string) {
+  const [user] = await db
+    .update(users)
+    .set({
+      isChirpyRed: true,
+    })
+    .where(eq(users.id, userId))
+    .returning();
 
   return user;
 }

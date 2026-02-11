@@ -17,4 +17,5 @@ export const config = {
     secret: envOrThrow("SECRET"),
     plataform: envOrThrow("PLATAFORM"),
     dbConfig,
+    polkaApiKey: envOrThrow("POLKA_KEY"),
 };
