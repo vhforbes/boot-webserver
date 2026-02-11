@@ -15,6 +15,7 @@ import {
   deleteChirpById,
   getChirps,
   getChirpsById,
+  getChirpsByUserId,
 } from "./db/queries/chirps.js";
 import {
   checkPassword,
@@ -266,9 +267,33 @@ async function handleCreateChirp(req: Request, res: Response) {
 }
 
 async function handleGetChirps(req: Request, res: Response) {
-  const chirps = await getChirps();
+  let authorId = "";
+  let authorIdQuery = req.query.authorId;
+  if (typeof authorIdQuery === "string") {
+    authorId = authorIdQuery;
+  }
 
-  res.status(200).send(chirps);
+  let sort = "";
+  let sortQuery = req.query.sort;
+  if (typeof sortQuery === "string") {
+    sort = sortQuery;
+  }
+
+  const sortedChirps = (chirps: any[]) => {
+    if (sort === "desc") return chirps.reverse();
+
+    return chirps;
+  };
+
+  if (authorId) {
+    const chirps = sortedChirps(await getChirpsByUserId(authorId));
+
+    return res.status(200).send(chirps);
+  }
+
+  const chirps = sortedChirps(await getChirps());
+
+  return res.status(200).send(chirps);
 }
 
 async function handleGetChirpsById(req: Request, res: Response) {

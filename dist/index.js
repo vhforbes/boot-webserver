@@ -4,7 +4,7 @@ import postgres from "postgres";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { createUser, getUserByEmail, resetUsers, updateUser, updateUserToRed, } from "./db/queries/users.js";
-import { createChirp, deleteChirpById, getChirps, getChirpsById, } from "./db/queries/chirps.js";
+import { createChirp, deleteChirpById, getChirps, getChirpsById, getChirpsByUserId, } from "./db/queries/chirps.js";
 import { checkPassword, getApiKey, getBearerToken, hashPassword, makeJWT, makeRefreshToken, validateJWT, } from "./auth.js";
 import { getRefreshToken, revokeRefreshToken, } from "./db/queries/refreshTokens.js";
 // Check if everything is in sync with db
@@ -180,8 +180,27 @@ async function handleCreateChirp(req, res) {
     res.status(201).send(chirp);
 }
 async function handleGetChirps(req, res) {
-    const chirps = await getChirps();
-    res.status(200).send(chirps);
+    let authorId = "";
+    let authorIdQuery = req.query.authorId;
+    if (typeof authorIdQuery === "string") {
+        authorId = authorIdQuery;
+    }
+    let sort = "";
+    let sortQuery = req.query.sort;
+    if (typeof sortQuery === "string") {
+        sort = sortQuery;
+    }
+    const sortedChirps = (chirps) => {
+        if (sort === "desc")
+            return chirps.reverse();
+        return chirps;
+    };
+    if (authorId) {
+        const chirps = sortedChirps(await getChirpsByUserId(authorId));
+        return res.status(200).send(chirps);
+    }
+    const chirps = sortedChirps(await getChirps());
+    return res.status(200).send(chirps);
 }
 async function handleGetChirpsById(req, res) {
     const { id } = req.params;
